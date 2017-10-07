@@ -12,7 +12,7 @@ const int MAX = 150;
 typedef struct
 {
 	int data;
-	struct list_head links; //Tiene dentro el *prev y *next
+	struct list_head links; //Tiene dentro el *prev y *next 
 }list_item_t;
 
 static const struct file_operations proc_entry_fops = {
@@ -33,7 +33,7 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 	*off += len;
 
 	//Parseo de add
-	if(sscanf(&kbuf,"add %i", &num) == 1) add 
+	if(sscanf(&kbuf,"add %i", &num) == 1) add(num) 
 	//Parseo de remove
 	else if(sscanf(&kbuf,"remove %i", &num) == 1) remove 
 	//Parseo de cat
@@ -47,12 +47,25 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 	return len;
 }
 static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, loff_t *off){ //Parte del cat
+	char kbuf[MAX];
+	
+	//Dice a la aplicacion que no hay nada más que leer
+	if ((*off)>0) return 0;
+	
+	//Comprueba que la longitud de los bytes no sea mayor a len
+	if (len < ???) return -ENOSPC;
+	
+	//Transfiere datos del kernel al userspace
+	if(copy_to_user(buf, ???, ???)) return -EINVAL;
 
+	(*off)+=len;
+
+	return ???	
 }
 
 int init_modlist_module( void ) {
 	int ret = 0;
-	INIT_LIST_HEAD(&mylist);
+    	INIT_LIST_HEAD(&mylist);
 	proc_entry = proc_create( "modlist", 0666, NULL, &proc_entry_fops);
 
 	if (proc_entry==NULL)
