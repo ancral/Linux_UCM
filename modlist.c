@@ -11,9 +11,6 @@ const int MAX_TAM = 256;
 
 struct list_head mylist;
 
-const int BUF_LEN = 150;
-const int MAX_ITEMS = 150;
-
 //Son los nodos de la lista
 struct list_item_t{
 	int data;
