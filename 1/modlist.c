@@ -18,9 +18,9 @@ typedef struct list_item_t{
 }list_item;
 
 
-void add(int dato, const char __user *buf){ 
+void add(int dato, const char __user *buf){
 
-	struct list_item_t* nuevoNodo = NULL; 
+	struct list_item_t* nuevoNodo = NULL;
 
 	nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
 
@@ -36,7 +36,7 @@ void remove(int dato){
 	struct list_head* nodoAct = NULL;
 	struct list_head* aux = NULL;
 	int encontrado = 0;
-	
+
 	if (list_empty(&mylist) == 0){
 		list_for_each_safe(nodoAct, aux, &mylist){
 			elem = list_entry(nodoAct, struct list_item_t, links);
@@ -65,7 +65,7 @@ void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de l
 	list_for_each_safe(nodoAct, aux, &mylist){
 		elem = list_entry(nodoAct, struct list_item_t, links);
 		printk(KERN_INFO "Se ha borrado: %i \n", elem->data);
-		list_del(&elem->links); 
+		list_del(&elem->links);
 		vfree(elem); //Liberacion de memoria donde estaba el nodo
 	}
 
@@ -85,9 +85,9 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 		printk(KERN_INFO "Modlist: No hay espacio\n");
 		return -ENOSPC;
 	}
-	
+
 	//Pasa a las paginas del userspace a las del kernel, len bytes de buf a kbuf
-	if (copy_from_user(kbuf, buf, len)) return -EFAULT; 
+	if (copy_from_user(kbuf, buf, len)) return -EFAULT;
 
 	kbuf[len] = '\0'; //NULL
 
@@ -111,23 +111,23 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 //El read es el que hace el cat, por lo que no hay que tener una funicon cat
 static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, loff_t *off){ //Parte del cat
 
-	int pos=0, ret;
-	char kbuf[MAX_TAM]; 
+	int ret;
+	char kbuf[MAX_TAM];
 	char *dest = kbuf; //Se establece en el principio con kbuf
 
 	struct list_head* nodoAct = NULL;
 	struct list_head* aux = NULL;
-	struct list_item_t* elem = NULL; 
+	struct list_item_t* elem = NULL;
 
 	list_for_each_safe(nodoAct, aux, &mylist){
 		elem = list_entry(nodoAct, struct list_item_t, links);
 		dest += sprintf(dest,"%i \n", elem->data); //Usamos dest como puntero para que vaya moviendo
-		
+
 	}
 
 	kbuf[len] = '\0'; //NULL
 
-	if((*off) > 0) ret = 0; 
+	if((*off) > 0) ret = 0;
 	else {
 		//Pasa a las paginas del kernel a las del userspace, len bytes de kbuf a buf
 		if (copy_to_user(buf, kbuf, len)) return -EINVAL;
