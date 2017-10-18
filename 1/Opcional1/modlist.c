@@ -11,11 +11,11 @@ const int MAX_TAM = 256;
 
 struct list_head mylist; //Lista de nodos
 
+#define PARTE_OPCIONAL
 #ifdef PARTE_OPCIONAL
-	#define BUFFER_LENGTH PAGE_SIZE
 	//Nodos de la lista
 	typedef struct list_item_t{
-		char* data;
+		char* cadena;
 		struct list_head links; //links contiene prev y next
 	}list_item;
 #else
@@ -33,11 +33,27 @@ struct list_head mylist; //Lista de nodos
 
 		nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
 
-		nuevoNodo->data = dato; //Establecemos el dato
+		nuevoNodo->cadena = dato; //Establecemos el dato
 
 		list_add_tail(&nuevoNodo->links, &mylist);
 
 		printk(KERN_INFO "Modlist: Dato anyadido a la lista\n");
+	}
+
+	void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
+		struct list_item_t* elem = NULL;
+		struct list_head* nodoAct = NULL;
+		struct list_head* aux = NULL;
+
+		list_for_each_safe(nodoAct, aux, &mylist){
+			elem = list_entry(nodoAct, struct list_item_t, links);
+			printk(KERN_INFO "Se ha borrado la lista");
+			list_del(&elem->links);
+			vfree(elem); //Liberacion de memoria donde estaba el nodo
+		}
+
+		printk(KERN_INFO "Modlist: Lista vaciada \n");
+
 	}
 
 	void remove(char* dato){
@@ -49,7 +65,7 @@ struct list_head mylist; //Lista de nodos
 		if (list_empty(&mylist) == 0){
 			list_for_each_safe(nodoAct, aux, &mylist){
 			elem = list_entry(nodoAct, struct list_item_t, links);
-			if(strcmp(elem->data, dato)) {
+			if(strcmp(elem->cadena, dato)) {
 					list_del(&elem->links);
 					vfree(elem);
 					printk(KERN_INFO "Modlist: El array, ha sido borrado de la lista\n");
@@ -80,6 +96,21 @@ struct list_head mylist; //Lista de nodos
 		printk(KERN_INFO "Modlist: Dato anyadido %i a la lista\n", dato);
 	}
 
+	void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
+		struct list_item_t* elem = NULL;
+		struct list_head* nodoAct = NULL;
+		struct list_head* aux = NULL;
+
+		list_for_each_safe(nodoAct, aux, &mylist){
+			elem = list_entry(nodoAct, struct list_item_t, links);
+			printk(KERN_INFO "Se ha borrado: %i \n", elem->data);
+			list_del(&elem->links);
+			vfree(elem); //Liberacion de memoria donde estaba el nodo
+		}
+
+		printk(KERN_INFO "Modlist: Lista vaciada \n");
+
+	}
 
 	void remove(int dato){
 		struct list_item_t* elem = NULL;
@@ -108,32 +139,14 @@ struct list_head mylist; //Lista de nodos
 	}
 #endif
 
-
-
-void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
-	struct list_item_t* elem = NULL;
-	struct list_head* nodoAct = NULL;
-	struct list_head* aux = NULL;
-
-	list_for_each_safe(nodoAct, aux, &mylist){
-		elem = list_entry(nodoAct, struct list_item_t, links);
-		printk(KERN_INFO "Se ha borrado: %i \n", elem->data);
-		list_del(&elem->links);
-		vfree(elem); //Liberacion de memoria donde estaba el nodo
-	}
-
-	printk(KERN_INFO "Modlist: Lista vaciada \n");
-
-}
-
 static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t len, loff_t *off){
 	char kbuf[MAX_TAM];
 	#ifdef PARTE_OPCIONAL
-		char* dato;
+		char* cadena = NULL;
 	#else
 		int dato;
 	#endif
-	char cadena[7];
+	char cad[7];
 
 	if ((*off)>0) return 0;
 
@@ -150,19 +163,26 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 
 	//Parseo
 	#ifdef PARTE_OPCIONAL
-		if (sscanf(kbuf, "add %s", &dato) == 1) add(dato); //Add
-		else if (sscanf(kbuf, "remove %s", &dato) == 1) remove(dato); //Remove
-	#else
-		if (sscanf(kbuf, "add %i", &dato) == 1) add(dato); //Add
-		else if (sscanf(kbuf, "remove %i", &dato) == 1) remove(dato); //Remove
-	#endif
-
-	else if (sscanf(kbuf, " %s cleanup", cadena) == 1){ //Cleanup
-		int res = strncmp(cadena, "cleanup", 6);
+		if (sscanf(kbuf, "add %c", cadena) == 1) add(cadena); //Add
+		else if (sscanf(kbuf, "remove %c", cadena) == 1) remove(cadena); //Remove
+		else if (sscanf(kbuf, " %s cleanup", cadena) == 1){ //Cleanup
+		int res = strncmp(cad, "cleanup", 6);
 		if (res == 0) cleanUp_list();
 		else printk(KERN_INFO "Modlist: Comando incorrecto\n");
 
 	}
+	#else
+		if (sscanf(kbuf, "add %i", &dato) == 1) add(dato); //Add
+		else if (sscanf(kbuf, "remove %i", &dato) == 1) remove(dato); //Remove
+		else if (sscanf(kbuf, " %s cleanup", dato) == 1){ //Cleanup
+		int res = strncmp(cad, "cleanup", 6);
+		if (res == 0) cleanUp_list();
+		else printk(KERN_INFO "Modlist: Comando incorrecto\n");
+
+	}
+	#endif
+
+	
 	else return -EINVAL;
 
 	*off += len; //Actualiza el puntero
@@ -184,7 +204,11 @@ static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, lof
 
 	list_for_each_safe(nodoAct, aux, &mylist){
 		elem = list_entry(nodoAct, struct list_item_t, links);
-		dest += sprintf(dest,"%i \n", elem->data); //Usamos dest como puntero para que vaya moviendo
+		#ifdef PARTE_OPCIONAL
+			dest += sprintf(dest,"%s \n", elem->cadena); //Usamos dest como puntero para que vaya moviendo
+		#else
+			dest += sprintf(dest,"%i \n", elem->data); //Usamos dest como puntero para que vaya moviendo
+		#endif
 
 	}
 
@@ -214,23 +238,17 @@ int init_modlist_module(void) {
 
 	#ifdef PARTE_OPCIONAL
 		INIT_LIST_HEAD(&mylist);
-		data = (char *)vmalloc(BUFFER_LENGTH);
 
-		if(!data) ret = -ENOMEM;
-		else {
-			memset(data, 0, BUFFER_LENGTH);
+		proc_entry = proc_create("modlist", 0666, NULL, &proc_entry_fops); //Inicialización con permisos al modlist
 
-			proc_entry = proc_create("modlist", 0666, NULL, &proc_entry_fops); //Inicialización con permisos al modlist
-
-			if (proc_entry == NULL){
-				ret = -ENOMEM;
-				printk(KERN_ALERT "Modlist: No se puede crear la entrada\n");
-			}
-			else {
-				printk(KERN_INFO "Modlist: Modulo cargado\n");
-			}
-
+		if (proc_entry == NULL){
+			ret = -ENOMEM;
+			printk(KERN_ALERT "Modlist: No se puede crear la entrada\n");
 		}
+		else {
+			printk(KERN_INFO "Modlist: Modulo cargado\n");
+		}
+
 	#else
 		INIT_LIST_HEAD(&mylist);
 
@@ -252,9 +270,6 @@ int init_modlist_module(void) {
 void exit_modlist_module(void) {
 	remove_proc_entry("modlist", NULL);
 	cleanUp_list(); //Limpia la lista
-	#ifdef PARTE_OPCIONAL
-		vfree(data);
-	#endif
 	printk(KERN_INFO "Modlist: Modulo descargado.\n");
 }
 
