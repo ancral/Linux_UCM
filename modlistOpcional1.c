@@ -69,7 +69,7 @@ void remove(char dato[MAX_TAM_PALABRA]) {
 	if (list_empty(&mylist) == 0) {
 		list_for_each_safe(nodoAct, aux, &mylist) {
 			elem = list_entry(nodoAct, struct list_item_t, links);
-			if (strncmp(elem->cadena, dato, strlen(elem->cadena))) {
+			if (!strncmp(elem->cadena, dato, strlen(elem->cadena))) { //if (elem->cadena != dato) => 0 else => 1
 				list_del(&elem->links);
 				vfree(elem);
 				printk(KERN_INFO "Modlist: El elemento %s , se ha borrado correctamente\n", elem->cadena);
@@ -185,10 +185,10 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 	}
 #else
 	if (sscanf(kbuf, "add %i", &num) == 1) {
-		add(dato); //Add
+		add(num); //Add
 	}
 	else if (sscanf(kbuf, "remove %i", &num) == 1) {
-		remove(dato); //Remove
+		remove(num); //Remove
 	}
 	else if (sscanf(kbuf, " %s cleanup", cad) == 1) {
 		int res = strncmp(cad, "cleanup", 6);
