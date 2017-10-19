@@ -8,150 +8,154 @@
 static struct proc_dir_entry *proc_entry;
 
 const int MAX_TAM = 256;
-
+const int MAX_TAM_PALABRA = 30;
 struct list_head mylist; //Lista de nodos
 
 #define PARTE_OPCIONAL
 #ifdef PARTE_OPCIONAL
-	//Nodos de la lista
-	typedef struct list_item_t{
-		char* cadena;
-		struct list_head links; //links contiene prev y next
-	}list_item;
+						 //Nodos de la lista
+typedef struct list_item_t {
+	char cadena[30];
+	struct list_head links; //links contiene prev y next
+}list_item;
 #else
-	//Nodos de la lista
-	typedef struct list_item_t{
-		int data;
-		struct list_head links; //links contiene prev y next
-	}list_item;
+						 //Nodos de la lista
+typedef struct list_item_t {
+	int data;
+	struct list_head links; //links contiene prev y next
+}list_item;
 #endif
 
 #ifdef PARTE_OPCIONAL
-	void add(char* dato){
+void add(char dato[MAX_TAM_PALABRA]) {
+	int i;
+	struct list_item_t* nuevoNodo = NULL;
+	int len = strlen(dato);
 
-		struct list_item_t* nuevoNodo = NULL;
+	nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
 
-		nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
+	for (i = 0; i<len; i++) {
+		nuevoNodo->cadena[i] = dato[i];
+	}
+	nuevoNodo->cadena[len] = '\0';
+	list_add_tail(&nuevoNodo->links, &mylist);
 
-		nuevoNodo->cadena = dato; //Establecemos el dato
+	printk(KERN_INFO "Modlist: Dato anyyadido %s a la lista\n", nuevoNodo->cadena);
 
-		list_add_tail(&nuevoNodo->links, &mylist);
+}
 
-		printk(KERN_INFO "Modlist: Dato anyadido a la lista\n");
+void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
+	struct list_item_t* elem = NULL;
+	struct list_head* nodoAct = NULL;
+	struct list_head* aux = NULL;
+
+	list_for_each_safe(nodoAct, aux, &mylist) {
+		elem = list_entry(nodoAct, struct list_item_t, links);
+		printk(KERN_INFO "Se ha borrado la lista");
+		list_del(&elem->links);
+		vfree(elem); //Liberacion de memoria donde estaba el nodo
 	}
 
-	void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
-		struct list_item_t* elem = NULL;
-		struct list_head* nodoAct = NULL;
-		struct list_head* aux = NULL;
+	printk(KERN_INFO "Modlist: Lista vaciada \n");
 
-		list_for_each_safe(nodoAct, aux, &mylist){
+}
+
+void remove(char dato[MAX_TAM_PALABRA]) {
+	struct list_item_t* elem = NULL;
+	struct list_head* nodoAct = NULL;
+	struct list_head* aux = NULL;
+	int encontrado = 0;
+
+	if (list_empty(&mylist) == 0) {
+		list_for_each_safe(nodoAct, aux, &mylist) {
 			elem = list_entry(nodoAct, struct list_item_t, links);
-			printk(KERN_INFO "Se ha borrado la lista");
-			list_del(&elem->links);
-			vfree(elem); //Liberacion de memoria donde estaba el nodo
-		}
-
-		printk(KERN_INFO "Modlist: Lista vaciada \n");
-
-	}
-
-	void remove(char* dato){
-		struct list_item_t* elem = NULL;
-		struct list_head* nodoAct = NULL;
-		struct list_head* aux = NULL;
-		int encontrado = 0;
-
-		if (list_empty(&mylist) == 0){
-			list_for_each_safe(nodoAct, aux, &mylist){
-			elem = list_entry(nodoAct, struct list_item_t, links);
-			if(strcmp(elem->cadena, dato)) {
-					list_del(&elem->links);
-					vfree(elem);
-					printk(KERN_INFO "Modlist: El array, ha sido borrado de la lista\n");
-					encontrado++;
-				}
-			}
-			if (encontrado == 0){
-				printk(KERN_INFO "Modlist: El array, no esta en la lista\n");
+			if (!strncmp(elem->cadena, dato, strlen(elem->cadena))) { //if (elem->cadena != dato) => 0 else => 1
+				list_del(&elem->links);
+				vfree(elem);
+				printk(KERN_INFO "Modlist: El elemento %s , se ha borrado correctamente\n", elem->cadena);
+				encontrado++;
 			}
 		}
-		else{
-			printk(KERN_INFO "Modlist: La lista no contiene elementos por lo que no puede borrar el array \n");
+		if (encontrado == 0) {
+			printk(KERN_INFO "Modlist: El array, no esta en la lista\n");
 		}
-
 	}
+	else {
+		printk(KERN_INFO "Modlist: La lista no contiene elementos por lo que no puede borrar el array \n");
+	}
+
+}
 
 #else
-	void add(int dato){
+void add(int dato) {
 
-		struct list_item_t* nuevoNodo = NULL;
+	struct list_item_t* nuevoNodo = NULL;
 
-		nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
+	nuevoNodo = vmalloc(sizeof(struct list_item_t*)); //Reservamos la memoria necesaria
 
-		nuevoNodo->data = dato; //Establecemos el dato
+	nuevoNodo->data = dato; //Establecemos el dato
 
-		list_add_tail(&nuevoNodo->links, &mylist);
+	list_add_tail(&nuevoNodo->links, &mylist);
 
-		printk(KERN_INFO "Modlist: Dato anyadido %i a la lista\n", dato);
+	printk(KERN_INFO "Modlist: Dato anyadido %i a la lista\n", dato);
+}
+
+void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
+	struct list_item_t* elem = NULL;
+	struct list_head* nodoAct = NULL;
+	struct list_head* aux = NULL;
+
+	list_for_each_safe(nodoAct, aux, &mylist) {
+		elem = list_entry(nodoAct, struct list_item_t, links);
+		printk(KERN_INFO "Se ha borrado: %i \n", elem->data);
+		list_del(&elem->links);
+		vfree(elem); //Liberacion de memoria donde estaba el nodo
 	}
 
-	void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la lista
-		struct list_item_t* elem = NULL;
-		struct list_head* nodoAct = NULL;
-		struct list_head* aux = NULL;
+	printk(KERN_INFO "Modlist: Lista vaciada \n");
 
-		list_for_each_safe(nodoAct, aux, &mylist){
+}
+
+void remove(int dato) {
+	struct list_item_t* elem = NULL;
+	struct list_head* nodoAct = NULL;
+	struct list_head* aux = NULL;
+	int encontrado = 0;
+
+	if (list_empty(&mylist) == 0) {
+		list_for_each_safe(nodoAct, aux, &mylist) {
 			elem = list_entry(nodoAct, struct list_item_t, links);
-			printk(KERN_INFO "Se ha borrado: %i \n", elem->data);
-			list_del(&elem->links);
-			vfree(elem); //Liberacion de memoria donde estaba el nodo
-		}
-
-		printk(KERN_INFO "Modlist: Lista vaciada \n");
-
-	}
-
-	void remove(int dato){
-		struct list_item_t* elem = NULL;
-		struct list_head* nodoAct = NULL;
-		struct list_head* aux = NULL;
-		int encontrado = 0;
-
-		if (list_empty(&mylist) == 0){
-			list_for_each_safe(nodoAct, aux, &mylist){
-				elem = list_entry(nodoAct, struct list_item_t, links);
-				if (elem->data == dato){
-					list_del(&elem->links);
-					vfree(elem);
-					printk(KERN_INFO "Modlist: El elemento %i, ha sido borrado de la lista\n", dato);
-					encontrado++;
-				}
-			}
-			if (encontrado == 0){
-				printk(KERN_INFO "Modlist: El elemento %i, no esta en la lista\n", dato);
+			if (elem->data == dato) {
+				list_del(&elem->links);
+				vfree(elem);
+				printk(KERN_INFO "Modlist: El elemento %i, ha sido borrado de la lista\n", dato);
+				encontrado++;
 			}
 		}
-		else{
-			printk(KERN_INFO "Modlist: La lista no contiene elementos por lo que no puede borrar el elemento %i\n", dato);
+		if (encontrado == 0) {
+			printk(KERN_INFO "Modlist: El elemento %i, no esta en la lista\n", dato);
 		}
-
 	}
+	else {
+		printk(KERN_INFO "Modlist: La lista no contiene elementos por lo que no puede borrar el elemento %i\n", dato);
+	}
+
+}
 #endif
 
-static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t len, loff_t *off){
+static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
 	char kbuf[MAX_TAM];
-	#ifdef PARTE_OPCIONAL
-		char* cadena = NULL;
-	#else
-		int dato;
-	#endif
+#ifdef PARTE_OPCIONAL
+	char cadena[MAX_TAM_PALABRA];
+#else
+	int num;
+#endif
 	char cad[7];
 
 	if ((*off)>0) return 0;
 
-	//Comprobación de que no pase el espacio, (MAX_TAM-1) porque hay que añadir el \0
-	if (len > MAX_TAM-1){
+	//Comprobaci�n de que no pase el espacio, (MAX_TAM-1) porque hay que a�adir el \0
+	if (len > MAX_TAM - 1) {
 		printk(KERN_INFO "Modlist: No hay espacio\n");
 		return -ENOSPC;
 	}
@@ -161,29 +165,44 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 
 	kbuf[len] = '\0'; //NULL
 
-	//Parseo
-	#ifdef PARTE_OPCIONAL
-		if (sscanf(kbuf, "add %c", cadena) == 1) add(cadena); //Add
-		else if (sscanf(kbuf, "remove %c", cadena) == 1) remove(cadena); //Remove
-		else if (sscanf(kbuf, " %s cleanup", cadena) == 1){ //Cleanup
+					  //Parseo
+#ifdef PARTE_OPCIONAL
+	if (sscanf(kbuf, "add %s", cadena) == 1) {
+		printk(KERN_INFO "Modlist: La cadena es %s a la lista\n", cadena);
+		add(cadena); //Add
+	}
+	else if (sscanf(kbuf, " remove %s", cadena) == 1) {
+		printk(KERN_INFO "Modlist: Estoy en el %s a la lista\n", cadena);
+		remove(cadena); //Remove
+	}
+	else if (sscanf(kbuf, " %s cleanup", cad) == 1) {
 		int res = strncmp(cad, "cleanup", 6);
 		if (res == 0) cleanUp_list();
-		else printk(KERN_INFO "Modlist: Comando incorrecto\n");
+		else {
+			printk(KERN_INFO "Modlist: Comando incorrecto\n");
+		}
 
 	}
-	#else
-		if (sscanf(kbuf, "add %i", &dato) == 1) add(dato); //Add
-		else if (sscanf(kbuf, "remove %i", &dato) == 1) remove(dato); //Remove
-		else if (sscanf(kbuf, " %s cleanup", dato) == 1){ //Cleanup
+#else
+	if (sscanf(kbuf, "add %i", &num) == 1) {
+		add(dato); //Add
+	}
+	else if (sscanf(kbuf, "remove %i", &num) == 1) {
+		remove(dato); //Remove
+	}
+	else if (sscanf(kbuf, " %s cleanup", cad) == 1) {
 		int res = strncmp(cad, "cleanup", 6);
-		if (res == 0) cleanUp_list();
-		else printk(KERN_INFO "Modlist: Comando incorrecto\n");
-
+		if (res == 0) {
+			cleanUp_list();
+		}
+		else {
+			printk(KERN_INFO "Modlist: Comando incorrecto\n");
+		}
 	}
-	#endif
+#endif
 
-	
-	else return -EINVAL;
+	else
+		return -EINVAL;
 
 	*off += len; //Actualiza el puntero
 
@@ -192,7 +211,7 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 
 
 //El read es el que hace el cat, por lo que no hay que tener una funicon cat
-static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, loff_t *off){ //Parte del cat
+static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, loff_t *off) { //Parte del cat
 
 	int ret;
 	char kbuf[MAX_TAM];
@@ -202,23 +221,24 @@ static ssize_t modlist_read(struct file *filp, char __user *buf, size_t len, lof
 	struct list_head* aux = NULL;
 	struct list_item_t* elem = NULL;
 
-	list_for_each_safe(nodoAct, aux, &mylist){
+	list_for_each_safe(nodoAct, aux, &mylist) {//realmente no hace falta que sea safe, no borras nada
 		elem = list_entry(nodoAct, struct list_item_t, links);
-		#ifdef PARTE_OPCIONAL
-			dest += sprintf(dest,"%s \n", elem->cadena); //Usamos dest como puntero para que vaya moviendo
-		#else
-			dest += sprintf(dest,"%i \n", elem->data); //Usamos dest como puntero para que vaya moviendo
-		#endif
+#ifdef PARTE_OPCIONAL
+		printk(KERN_INFO "Modlist: La cadena es %s a la lista\n", elem->cadena);
+		dest += sprintf(dest, "%s \n", elem->cadena); //Usamos dest como puntero para que vaya moviendo			
+#else
+		dest += sprintf(dest, "%i \n", elem->data); //Usamos dest como puntero para que vaya moviendo
+#endif
 
 	}
 
 	kbuf[len] = '\0'; //NULL
 
-	if((*off) > 0) ret = 0;
+	if ((*off) > 0) ret = 0;
 	else {
 		//Pasa a las paginas del kernel a las del userspace, len bytes de kbuf a buf
 		if (copy_to_user(buf, kbuf, len)) return -EINVAL;
-		ret = (dest-kbuf);
+		ret = (dest - kbuf);
 	}
 
 	(*off) += len; //Actualiza el puntero
@@ -234,35 +254,19 @@ static const struct file_operations proc_entry_fops = {
 
 /*Probado, no tocar*/
 int init_modlist_module(void) {
+
 	int ret = 0;
+	INIT_LIST_HEAD(&mylist);
 
-	#ifdef PARTE_OPCIONAL
-		INIT_LIST_HEAD(&mylist);
+	proc_entry = proc_create("modlist", 0666, NULL, &proc_entry_fops);
 
-		proc_entry = proc_create("modlist", 0666, NULL, &proc_entry_fops); //Inicialización con permisos al modlist
-
-		if (proc_entry == NULL){
-			ret = -ENOMEM;
-			printk(KERN_ALERT "Modlist: No se puede crear la entrada\n");
-		}
-		else {
-			printk(KERN_INFO "Modlist: Modulo cargado\n");
-		}
-
-	#else
-		INIT_LIST_HEAD(&mylist);
-
-		proc_entry = proc_create("modlist", 0666, NULL, &proc_entry_fops); //Inicialización con permisos al modlist
-
-		if (proc_entry == NULL){
-			ret = -ENOMEM;
-			printk(KERN_ALERT "Modlist: No se puede crear la entrada\n");
-		}
-		else {
-			printk(KERN_INFO "Modlist: Modulo cargado\n");
-		}
-
-	#endif
+	if (proc_entry == NULL) {
+		ret = -ENOMEM;
+		printk(KERN_ALERT "Modlist: No se puede crear la entrada\n");
+	}
+	else {
+		printk(KERN_INFO "Modlist: Modulo cargado\n");
+	}
 
 	return ret;
 }
