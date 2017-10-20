@@ -3,8 +3,11 @@
 
 
 normal() {
-	make clean
-	make
+	make clean > /dev/null
+	make > /dev/null
+
+	echo "///// PARTE NORMAL, SCRIPT CON ENTEROS /////"
+	
 	if lsmod | grep modlist > /dev/null ; then
 		echo "--------------------------------------------------"
 		echo "Ya existe el modlist, borrando e instalando de nuevo"
@@ -57,8 +60,8 @@ normal() {
 }
 
 opcional() {
-	make clean
-	make EXTRA_CFLAGS=-DPARTE_OPCIONAL
+	make clean > /dev/null
+	make EXTRA_CFLAGS=-DPARTE_OPCIONAL > /dev/null
 
 	echo "///// PARTE OPCIONAL, SCRIPT CON CADENA DE CARACTERES /////"
 
