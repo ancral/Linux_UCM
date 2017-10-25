@@ -185,10 +185,10 @@ static ssize_t modlist_write(struct file *filp, const char __user *buf, size_t l
 	}
 #else
 	if (sscanf(kbuf, "add %i", &num) == 1) {
-		add(num); //Add
+		add(dato); //Add
 	}
 	else if (sscanf(kbuf, "remove %i", &num) == 1) {
-		remove(num); //Remove
+		remove(dato); //Remove
 	}
 	else if (sscanf(kbuf, " %s cleanup", cad) == 1) {
 		int res = strncmp(cad, "cleanup", 6);
