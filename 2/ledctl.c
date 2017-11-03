@@ -12,7 +12,7 @@ SYSCALL_DEFINE1(ledctl,unsigned int,mask){
 	struct tty_driver* kbd_driver= vc_cons[fg_console].d->port.tty->driver;	
 
 	if(mask < 0 || mask > 7){
-	  return -EINVAL;//poner otro error mejor
+	  return -EINVAL;
 	}
 	return (kbd_driver->ops->ioctl) (vc_cons[fg_console].d->port.tty, KDSETLED, bit2 | bit1 | bit0);
 }
