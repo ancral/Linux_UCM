@@ -19,7 +19,9 @@ make > /dev/null
 
 
 if lsmod | grep blinkdrv > /dev/null; then
-        echo "Eliminando modulo blinkdrv"
+    rmmod blinkdrv
+	echo "Eliminando modulo blinkdrv"
+	echo "--------------------------"
 fi
 
 echo "Instalando el modulo blinkdrv"

@@ -1,0 +1,1 @@
+cmd_/home/kernel/Escritorio/practicas/Linux_UCM/3/blinkdrv.ko := ld -r -m elf_x86_64 -T /usr/src/linux-headers-3.14.1.lin/scripts/module-common.lds --build-id  -o /home/kernel/Escritorio/practicas/Linux_UCM/3/blinkdrv.ko /home/kernel/Escritorio/practicas/Linux_UCM/3/blinkdrv.o /home/kernel/Escritorio/practicas/Linux_UCM/3/blinkdrv.mod.o
