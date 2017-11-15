@@ -26,30 +26,23 @@ int main( int argc, char** argv ) {
 
     if(porcentaje > 87.5) {
         leds = "0:000004,1:000011,2:001111,3:001110,4:001100,5:011100,6:111000,7:110000";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 75) {
         leds = "0:000004,1:000011,2:001111,3:001110,4:001100,5:011100,6:111000";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 62.5) {
         leds = "0:000004,1:000011,2:001111,3:001110,4:001100,5:011100";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 50) {
         leds = "0:000004,1:000011,2:001111,3:001110,4:001100";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 37.5) {
         leds = "0:000004,1:000011,2:001111,3:001110";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 25) {
         leds = "0:000004,1:000011,2:001111";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 12.5) {
         leds = "0:000004,1:000011";
-        fwrite(leds,strlen(leds),1,f);
     }else if(porcentaje > 0) {
         leds = "0:000004";
-        fwrite(leds,strlen(leds),1,f);
     }
-    
+	
+    fwrite(leds,strlen(leds),1,f);
     fclose(f);      
     return 0;
 }
