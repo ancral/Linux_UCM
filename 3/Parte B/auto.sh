@@ -1,8 +1,3 @@
-if [[ $EUID -ne 0 ]] ; then
-   echo "Debes de ser root para ejecutarlo" 1>&2
-   exit 1
-fi
-
 echo "Eliminando el modulo usbhid"
 echo "---------------------------" 
 rmmod usbhid
@@ -19,14 +14,12 @@ make > /dev/null
 
 
 if lsmod | grep blinkdrv > /dev/null; then
-    rmmod blinkdrv
-	echo "Eliminando modulo blinkdrv"
-	echo "--------------------------"
+        echo "Eliminando modulo blinkdrv"
+	echo "-----------------------------"
+	rmmod blinkdrv.ko
 fi
 
 echo "Instalando el modulo blinkdrv"
 echo "-----------------------------"
 insmod blinkdrv.ko
-
-
 

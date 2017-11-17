@@ -1,0 +1,3 @@
+Ejecutar con permisos de root ./practica para que no haya problemas al ejecutar el script.
+Utilizamos la llamada system una vez, pero para ejecutar el script, realmente no haria falta
+porque no se especifica que el programa lo tenga que hacer, pero queda mejor, mas automatico.
