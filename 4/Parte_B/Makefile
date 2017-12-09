@@ -1,19 +1,8 @@
-TARGET = fifotest
+obj-m += fifoproc.o 
 
-CC = gcc
-CPPSYMBOLS=
-CFLAGS = -g -Wall $(CPPSYMBOLS)
-LDFLAGS = 
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
 
-OBJS = fifotest.o
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
 
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $(TARGET)  $(OBJS)
-
-.c.o: 
-	$(CC) $(CFLAGS)  -c  $<
-
-clean: 
-	-rm -f *.o $(TARGET) 
