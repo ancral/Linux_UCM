@@ -9,8 +9,8 @@
 #include <linux/semaphore.h>
 #include <linux/kfifo.h>
 
-#define MAX_CBUFFER_LEN		50
-#define MAX_KBUF		50
+#define MAX_CBUFFER_LEN		64
+#define MAX_KBUF		64
 
 MODULE_LICENSE("GPL");
 
@@ -164,6 +164,7 @@ int init_fifoproc_module(void) {
 	sema_init(&sem_cons, 0);
 
 	//Inicializacion a 1 del semaforo que permite acceso en exclusion
+	//emular mutex
 	sema_init(&mtx, 1);
 	
 	nr_prod_waiting=nr_cons_waiting=0;
