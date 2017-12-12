@@ -29,9 +29,54 @@ int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
 
 static int fifoproc_open(struct inode *inode, struct file *file) {	
-	
-	
-    return 0;
+	if(down_interruptible(&mtx)) return -EINTR;
+
+	if(file->f_mode & FMODE_READ){//Consumidor
+		cons_count++;
+
+		if(nr_prod_waiting > 0){
+			nr_prod_waiting++;
+			up(&sem_prod);
+		}
+
+		while(prod_count==0) {
+			nr_cons_waiting++;
+			up(&mtx);
+			if(down_interruptible(&sem_cons)){
+				down(&mtx);
+				nr_cons_waiting--;
+				cons_count--;
+				up(&mtx);
+				return -EINTR;
+
+			}
+			if(down_interruptible(&mtx)) return -EINTR;
+		}
+	}else{			//Productor
+		prod_count++;
+
+		if(nr_cons_waiting > 0){
+			nr_cons_waiting++;
+			up(&sem_cons);
+		}
+
+		while(cons_count==0) {
+			nr_prod_waiting++;
+			up(&mtx);
+			if(down_interruptible(&sem_prod)){
+				down(&mtx);
+				nr_prod_waiting--;
+				prod_count--;
+				up(&mtx);
+				return -EINTR;
+
+			}
+			if(down_interruptible(&mtx)) return -EINTR;
+		}	
+
+
+	}    
+	return 0;
 }
 
 static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {

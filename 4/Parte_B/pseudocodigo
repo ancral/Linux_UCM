@@ -2,9 +2,28 @@ mutex mtx;
 condvar prod, cons;
 int prod_count=0, cons_count=0;
 struct kfifo cbuffer;
-int nr_prod_waiting = 0;
-int nr_cons_waiting = 0;
-void fifoproc_open(bool abre_para_lectura...) {
+
+
+int fifoproc_open(bool abre_para_lectura...) { //Ãng
+	lock(mtx);
+	
+	if(abre_para_lectura) { //Consumidor
+		cons_count++;
+		cond_signal(prod);
+
+		while(prod_count==0) cond_wait(cons,mtx);
+
+	}else{			//Productor
+		prod_count++;
+		cond_signal(cons);
+
+		while(cons_count==0) cond_wait(prod,mtx);
+	}
+	return 0;
+}
+
+
+int fifoproc_open(bool abre_para_lectura...) {
 	
 	/*En el caso de que se produzca un bloqueo, el kernel pone el
 	proceso en estado TASK_INTERRUPTIBLE (el proceso
@@ -27,7 +46,7 @@ void fifoproc_open(bool abre_para_lectura...) {
 		
 		/*Signal a los productores*/
 		lock(&mtx);
-		cond_signal(nr_prod_waiting>0);
+		cond_broadcast(prod);
 		unlock(&mtx);
 		
 		lock(&mtx);
@@ -46,7 +65,7 @@ void fifoproc_open(bool abre_para_lectura...) {
 		
 		lock(&mtx);
 		while(cons_count == 0){//Cuando ya no hay consumidores activos
-            cond_wait(nr_prod_waiting == 0,&mtx,); //¿? como pones la condicion? nr_prod_waiting
+            	cond_wait(cons); //¿? como pones la condicion? nr_prod_waiting
         );
 		unlock(&mtx);
 		
