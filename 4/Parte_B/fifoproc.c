@@ -30,6 +30,8 @@ int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
 static int fifoproc_open(struct inode *inode, struct file *file) {	
 	
+	
+    return 0;
 }
 
 static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
@@ -72,7 +74,8 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 	}
 
 	//Insertamos datos
-	kfifo_in(cbuffer, kbuf, len);
+	//kfifo_in(&cbuffer, kbuf, len);
+	kfifo_in(&cbuffer, kbuf, sizeof(int)*len);//segun las transpas es asi
 	
 	//Despertar a posible consumidor bloqueado
 	while (nr_cons_waiting > 0) {
@@ -90,7 +93,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	char kbuf[MAX_KBUF];
 	
 	if((*off) > 0) return 0; 
-	if(len > MAX_CBUFFER_LEN || len > MAX_KBUFF) return -ENOSPC;
+	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
 	
 	
 	//"Adquiere" el candado
@@ -122,7 +125,9 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	}
 	
 	//Leemos datos
-	kfifo_out(&cbuffer, kbuf, len);
+	if(kfifo_out(&cbuffer, kbuf, len) != len){
+		return -EFAULT;// buscar error adecuado
+	}
 	
 	//Despertar a posible productor bloqueado
 	while (nr_prod_waiting > 0) {
@@ -140,6 +145,8 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 
 static int fifoproc_release(struct inode *inode, struct file *file) {
 	
+return 0;
+
 }
 
 
@@ -151,14 +158,12 @@ static const struct file_operations proc_entry_fops = {
     	.write = fifoproc_write
 };
 
-
 int init_fifoproc_module(void) {
-	int retval;
 
-	if(retval = kfifo(&cbuffer,MAX_CBUFFER_LEN*sizeof(int),GFP_KERNEL)) {
+	if(kfifo_alloc(&cbuffer,(MAX_CBUFFER_LEN*sizeof(int)),GFP_KERNEL)) {
 		return -ENOMEM;
 	}
-	
+
 	//Inicializacion a 0 de los semaforos usandos como colas de espera
 	sema_init(&sem_prod, 0);
 	sema_init(&sem_cons, 0);
