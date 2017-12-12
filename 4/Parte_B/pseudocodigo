@@ -2,10 +2,56 @@ mutex mtx;
 condvar prod, cons;
 int prod_count=0, cons_count=0;
 struct kfifo cbuffer;
-
+int nr_prod_waiting = 0;
+int nr_cons_waiting = 0;
 void fifoproc_open(bool abre_para_lectura...) {
-
-
+	
+	/*En el caso de que se produzca un bloqueo, el kernel pone el
+	proceso en estado TASK_INTERRUPTIBLE (el proceso
+	SÍ responde a señales.). Si el proceso es despertado
+	por una señal antes de decrementar el semáforo, la
+	función devuelve un valor distinto de 0 y 0 en caso
+	contrario.*/
+	
+	/*if(down_interruptible(&mtx)){
+	       return -EINTR;
+	}*/
+	/*
+		Al abrir FIFO en modo lectura (consumidor) se bloquea al proceso
+		hasta que productor haya abierto su extremo de escritura
+	*/
+	if (fich->f_mode & FMODE_READ){
+	 // un consumidor abrio el fifo
+		
+		cons_count++; // aumentamos el nr de consumidores
+		
+		/*Signal a los productores*/
+		lock(&mtx);
+		cond_signal(nr_prod_waiting>0);
+		unlock(&mtx);
+		
+		lock(&mtx);
+		while(prod_count == 0){//Cuando ya no hay productores activos
+            cond_wait(nr_cons_waiting == 0,&mtx,); //¿? como pones la condicion? nr_cons_waiting
+        );
+		unlock(&mtx);
+	}
+	else{
+		//Es un productor
+		prod_count++;
+		/*Signal a los consumidores*/
+		lock(&mtx);
+		cond_signal(nr_cons_waiting>0);
+		unlock(&mtx);
+		
+		lock(&mtx);
+		while(cons_count == 0){//Cuando ya no hay consumidores activos
+            cond_wait(nr_prod_waiting == 0,&mtx,); //¿? como pones la condicion? nr_prod_waiting
+        );
+		unlock(&mtx);
+		
+	}	
+	//up(mtx); porque el de arriba lo bloquea
 }
 
 int fifoproc_write(char* buff, int len...) {
@@ -69,4 +115,3 @@ void fifoproc_release(bool lectura...) {
 
 
 }
-
