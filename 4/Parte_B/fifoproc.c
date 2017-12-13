@@ -122,7 +122,6 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 
 	//Insertamos datos
 	kfifo_in(&cbuffer, kbuf, len);
-	//kfifo_in(&cbuffer, kbuf, sizeof(int)*len);//segun las transpas es asi	
 
 	//Despertar a posible consumidor bloqueado
 	while (nr_cons_waiting > 0) {
@@ -166,15 +165,16 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	}
 	
 	//Detectar fin de comunicacion por error (productor cierra FIFO antes) o FIFO vacia
-	if (prod_count == 0 || kfifo_is_empty(&cbuffer)) {
+	if (prod_count == 0 && kfifo_is_empty(&cbuffer)) {
 		up(&mtx);
 		return 0;
 	}
 	
 	//Leemos datos
-	if(kfifo_out(&cbuffer, kbuf, len) != len){
+	kfifo_out(&cbuffer, kbuf, len);
+	/*if(kfifo_out(&cbuffer, kbuf, len) != len){
 		return -EFAULT;// buscar error adecuado
-	}
+	}*/
 	
 	//Despertar a posible productor bloqueado
 	while (nr_prod_waiting > 0) {
