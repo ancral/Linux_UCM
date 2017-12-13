@@ -29,9 +29,56 @@ int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
 
 static int fifoproc_open(struct inode *inode, struct file *file) {	
-	
-	
-    return 0;
+	if(down_interruptible(&mtx)) return -EINTR;
+
+	if(file->f_mode & FMODE_READ){//Consumidor
+		cons_count++;
+
+		if(nr_prod_waiting > 0){ //cond_broadcast o cond_signal?
+			nr_prod_waiting++;
+			up(&sem_prod);
+		}
+
+		while(prod_count==0) { //Necesita minimo >0 productor
+			nr_cons_waiting++;
+			up(&mtx);
+			if(down_interruptible(&sem_cons)){
+				down(&mtx);
+				nr_cons_waiting--;
+				cons_count--;
+				up(&mtx);
+				return -EINTR;
+
+			}
+			if(down_interruptible(&mtx)) return -EINTR;
+		}
+	}else{			//Productor
+		prod_count++;
+
+		if(nr_cons_waiting > 0){
+			nr_cons_waiting++;
+			up(&sem_cons);
+		}
+
+		while(cons_count==0) { //Necesita minimo >0 productor
+			nr_prod_waiting++;
+			up(&mtx);
+			if(down_interruptible(&sem_prod)){
+				down(&mtx);
+				nr_prod_waiting--;
+				prod_count--;
+				up(&mtx);
+				return -EINTR;
+
+			}
+			if(down_interruptible(&mtx)) return -EINTR;
+		}	
+
+
+	}  
+
+	up(&mtx);  
+	return 0;
 }
 
 static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
@@ -74,9 +121,8 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 	}
 
 	//Insertamos datos
-	//kfifo_in(&cbuffer, kbuf, len);
-	kfifo_in(&cbuffer, kbuf, sizeof(int)*len);//segun las transpas es asi
-	
+	kfifo_in(&cbuffer, kbuf, len);
+
 	//Despertar a posible consumidor bloqueado
 	while (nr_cons_waiting > 0) {
 		up(&sem_cons);
@@ -119,15 +165,16 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	}
 	
 	//Detectar fin de comunicacion por error (productor cierra FIFO antes) o FIFO vacia
-	if (prod_count == 0 || kfifo_is_empty(&cbuffer)) {
+	if (prod_count == 0 && kfifo_is_empty(&cbuffer)) {
 		up(&mtx);
 		return 0;
 	}
 	
 	//Leemos datos
-	if(kfifo_out(&cbuffer, kbuf, len) != len){
+	kfifo_out(&cbuffer, kbuf, len);
+	/*if(kfifo_out(&cbuffer, kbuf, len) != len){
 		return -EFAULT;// buscar error adecuado
-	}
+	}*/
 	
 	//Despertar a posible productor bloqueado
 	while (nr_prod_waiting > 0) {
@@ -144,9 +191,26 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 }
 
 static int fifoproc_release(struct inode *inode, struct file *file) {
-	
-return 0;
+	if(down_interruptible(&mtx)) return -EINTR;
 
+	if(file->f_mode & FMODE_READ){//Consumidor
+		cons_count--;
+		if(nr_prod_waiting > 0){
+			up(&sem_prod);
+			nr_prod_waiting--;
+		}
+
+	}else{ //Productor
+		prod_count--;
+		if(nr_cons_waiting > 0){
+			up(&sem_cons);
+			nr_cons_waiting--;
+		}
+	}
+	
+	up(&mtx);
+	kfifo_reset(&cbuffer);
+	return 0;
 }
 
 
