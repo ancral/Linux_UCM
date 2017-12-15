@@ -27,15 +27,15 @@ int nr_prod_waiting = 0; //Numero de procesos productores esperando
 int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
 
-
 static int fifoproc_open(struct inode *inode, struct file *file) {	
+	
 	if(down_interruptible(&mtx)) return -EINTR;
 
 	if(file->f_mode & FMODE_READ){//Consumidor
 		cons_count++;
 
 		if(nr_prod_waiting > 0){ //cond_broadcast o cond_signal?
-			nr_prod_waiting++;
+			nr_prod_waiting--;
 			up(&sem_prod);
 		}
 
@@ -56,7 +56,7 @@ static int fifoproc_open(struct inode *inode, struct file *file) {
 		prod_count++;
 
 		if(nr_cons_waiting > 0){
-			nr_cons_waiting++;
+			nr_cons_waiting--;
 			up(&sem_cons);
 		}
 
@@ -69,12 +69,9 @@ static int fifoproc_open(struct inode *inode, struct file *file) {
 				prod_count--;
 				up(&mtx);
 				return -EINTR;
-
 			}
 			if(down_interruptible(&mtx)) return -EINTR;
 		}	
-
-
 	}  
 
 	up(&mtx);  
@@ -83,13 +80,13 @@ static int fifoproc_open(struct inode *inode, struct file *file) {
 
 static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
 	char kbuf[MAX_KBUF];
-	
+
 	if((*off) > 0) return 0;
+
 	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
-        
+      
 	if(copy_from_user(kbuf,buf,len)) return -EFAULT;
 
-	
 	//"Adquiere" el candado
 	if (down_interruptible(&mtx)) return -EINTR;
 	
@@ -122,6 +119,7 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 
 	//Insertamos datos
 	kfifo_in(&cbuffer, kbuf, len);
+	//kfifo_in(&cbuffer, kbuf, sizeof(int)*len);//segun las transpas es asi	
 
 	//Despertar a posible consumidor bloqueado
 	while (nr_cons_waiting > 0) {
@@ -140,8 +138,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	
 	if((*off) > 0) return 0; 
 	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
-	
-	
+		
 	//"Adquiere" el candado
 	if(down_interruptible(&mtx)) return -EINTR;
 
@@ -184,9 +181,9 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	
 	//"Libera" el candado
 	up(&mtx);
-	
+
 	if(copy_to_user(buf,kbuf,len)) return -EFAULT;
-	
+
 	return len;
 }
 
@@ -208,8 +205,12 @@ static int fifoproc_release(struct inode *inode, struct file *file) {
 		}
 	}
 	
+	if(cons_count + prod_count == 0){
+		kfifo_reset(&cbuffer);
+	}
+
 	up(&mtx);
-	kfifo_reset(&cbuffer);
+	
 	return 0;
 }
 
@@ -218,8 +219,8 @@ static int fifoproc_release(struct inode *inode, struct file *file) {
 static const struct file_operations proc_entry_fops = {
 	.open = fifoproc_open,
 	.release = fifoproc_release,
-    	.read = fifoproc_read,
-    	.write = fifoproc_write
+    .read = fifoproc_read,
+    .write = fifoproc_write
 };
 
 int init_fifoproc_module(void) {
