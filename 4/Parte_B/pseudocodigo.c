@@ -91,8 +91,7 @@ int fifoproc_release(bool lectura...) {
 		prod_count--;
 		cond_signal(cons);
 	}
-
-	unlock(mtx);
 	Vaciar_Buffer;
+	unlock(mtx);
 	return 0;
 }

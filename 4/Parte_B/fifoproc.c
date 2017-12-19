@@ -86,6 +86,8 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
       
 	if(copy_from_user(kbuf,buf,len)) return -EFAULT;
+	//kbuf[len] = '\0';// Añade '\0'
+   // (*off)+=len;// actualiza el puntero
 
 	//"Adquiere" el candado
 	if (down_interruptible(&mtx)) return -EINTR;
@@ -119,7 +121,6 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 
 	//Insertamos datos
 	kfifo_in(&cbuffer, kbuf, len);
-	//kfifo_in(&cbuffer, kbuf, sizeof(int)*len);//segun las transpas es asi	
 
 	//Despertar a posible consumidor bloqueado
 	while (nr_cons_waiting > 0) {
@@ -135,8 +136,9 @@ static ssize_t fifoproc_write(struct file *filp, const char __user *buf, size_t 
 
 static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
 	char kbuf[MAX_KBUF];
-	
+	int res;
 	if((*off) > 0) return 0; 
+	
 	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
 		
 	//"Adquiere" el candado
@@ -168,10 +170,12 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	}
 	
 	//Leemos datos
-	kfifo_out(&cbuffer, kbuf, len);
-	/*if(kfifo_out(&cbuffer, kbuf, len) != len){
+	res = kfifo_out(&cbuffer, kbuf, len);
+	printk(KERN_INFO "RESULTADO DEL KFIFO_OUT ES: %i\n", res);
+	/*if(kfifo_out(&cbuffer, kbuf, len) != len){//no siempre coinciden
 		return -EFAULT;// buscar error adecuado
 	}*/
+	//kbuf[len] = '\0';
 	
 	//Despertar a posible productor bloqueado
 	while (nr_prod_waiting > 0) {
@@ -183,6 +187,7 @@ static ssize_t fifoproc_read(struct file *filp, char __user *buf, size_t len, lo
 	up(&mtx);
 
 	if(copy_to_user(buf,kbuf,len)) return -EFAULT;
+	//(*off)+=len; //actualiza el puntero
 
 	return len;
 }
