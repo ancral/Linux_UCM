@@ -1,0 +1,9 @@
+El dispositivo se llama fifoprocDev y se guarda en /dev/fifoprocDev.
+Para facilitar el uso del dispositivo, al cargar el modulo se hace un 
+printk con el comando a ejecutar para cargar el driver, solo hay que 
+ejecutar dmesg y saldra. Ejecutar dicho comando, que tendra el numero
+major y minor que tendra el dispositivo y listo, ya se puede hacer el 
+test: 
+
+./fifotest -f /dev/fifoprocDev -s < test.txt
+./fifotest -f /dev/fifoprocDev -r
