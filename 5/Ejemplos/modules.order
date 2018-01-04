@@ -1,0 +1,4 @@
+kernel//home/kernel/Escritorio/LIN/p5/Ejemplos/example_timer.ko
+kernel//home/kernel/Escritorio/LIN/p5/Ejemplos/workqueue1.ko
+kernel//home/kernel/Escritorio/LIN/p5/Ejemplos/workqueue2.ko
+kernel//home/kernel/Escritorio/LIN/p5/Ejemplos/workqueue3.ko
