@@ -38,6 +38,9 @@ struct work_struct {
 	work_func_t func;
 };
 */
+
+struct timer_list my_timer; /* Structure that describes the kernel timer */
+
 static spinlock_t sp;
 
 //Lista enlazada
@@ -52,25 +55,42 @@ typedef struct list_item_t{
 
 
 
-/*se va a encargar de generar el nr aleatorio para introducirdo
-que sea va a introducir en la lista*/
+/*se va a encargar de generar el nr aleatorio y meterlo en el buffer para
+que luego se descargue en la lista*/
 static void generar_nr_aleatorio(unsigned long data){
 	
 	unsigned int nr = get_random_int();
 	unsigned int nrAleat = (nr % max_random);
 	unsigned long flags;
 	int tamOcupado = 0;
+	int cpuAct;
 
 	//Protegemos
 	spin_lock_irqsave(&sp,flags);
 
 	kfifo_in(&cbuffer,&nrAleat,sizeof(int)); // Insertamos el elem generado en el buffer circular
-	tamOcupado = kfifo_size(&cbuffer);
-	printk(KERN_INFO "TAMAÑO DEL KFIFO ES: : %i \n", tamOcupado);
-
-	spin_unlock_irqrestore(&sp, flags);
-
 	printk(KERN_INFO "Se ha generado el número: %d \n", nrAleat);
+	
+	spin_unlock_irqrestore(&sp, flags);//¿si se ejecuta en otra cpu no hace falta bloquear no?
+
+	tamOcupado = kfifo_len(&cbuffer);
+	printk(KERN_INFO "TAMAÑO DEL KFIFO ES: : %i \n", tamOcupado);
+	if(tamOcupado >= emergency_threshold){
+		//Consulta si un trabajo esta pendiente.
+		if(work_pending((struct work_struct *) &my_work)){
+			//Si el trabajo esta pendiente espera la finalización de todos los trabajos en workqueue por defecto
+            flush_scheduled_work();
+        }
+        cpuAct = smp_processor_id();
+
+        if(cpuAct % 2 == 0){ // si la cpu actual es par
+        	schedule_work_on(1,&my_work);
+        }
+        else{//impar
+			schedule_work_on(0,&my_work);
+        }
+	}
+	mod_timer(&my_timer, jiffies + timer_period_ms);
 }
 
 //p4 parte A, permite insertar un elemento en la lista
@@ -138,9 +158,37 @@ static ssize_t modconfig_write(struct file *filp, const char __user *buf, size_t
 return 0;
 }
 
-/* Workqueue*/
+/* La función asociada a la tarea volcará los datos del buffer a la lista
+enlazada de enteros:
+
+1º Se extraerán todos los elementos del buffer circular (vacía buffer)
+2º Se ha de reservar memoria dinámica para los nodos de la lista vía vmalloc()
+3º Si el programa de usuario está bloqueado esperando a que haya ele-mentos en la lista, la función le despertará
+*/
 static void my_wq_function( struct work_struct *work ){
-	
+
+	int kbuf[MAX_KBUF];
+	unsigned long flags;
+	int tamOcupado = kfifo_len(&cbuffer);
+	int i = 0;
+	int elem;
+
+	spin_lock_irqsave(&sp, flags);
+	//1º
+	for(i=0; i<tamOcupado;i++){
+		kfifo_out(&cbuffer,&elem,sizeof(int)); // Insertamos el elem generado en el buffer circular
+		kbuf[i] = elem; //meto los elementos primero a este array, porque el sp esta ocupado y no puedo insertar en la lista directamente
+	}
+	kfifo_reset(&cbuffer);
+	spin_unlock_irqrestore(&sp, flags);
+	//2º
+	for(i=0; i<tamOcupado; i++){
+		insertar_elem_lista(kbuf[i]);
+	}
+
+	//3º semaforo productor consumidor??
+
+	printk(KERN_INFO "modtimer: Se han copiado todos los elementos a la lista\n");
 }
 
 static struct file_operations proc_entry_fops_cfg = {
@@ -164,6 +212,14 @@ int init_timer_module( void ){
 
 	INIT_WORK(&my_work, my_wq_function); // inicializa workqueue con una funcion
 
+	init_timer(&my_timer);
+
+	my_timer.data=0;
+    my_timer.function=generar_nr_aleatorio;
+    my_timer.expires=jiffies + timer_period_ms;
+
+    add_timer(&my_timer); //Activa el timer la primera vez
+
 	if(kfifo_alloc(&cbuffer,(MAX_CBUFFER_LEN*sizeof(int)),GFP_KERNEL)) { // creamos memoria para el kfifo
 		return -ENOMEM;
 	}
@@ -184,7 +240,7 @@ int init_timer_module( void ){
 }
 
 void exit_timer_module( void ){
-
+	del_timer_sync(&my_timer);
 }
 
 module_init(init_timer_module);
