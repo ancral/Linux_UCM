@@ -17,7 +17,7 @@
 #define MAX_KBUF		64
 
 //Variables globales
-int timer_period_ms = HZ;
+int timer_period_ms = 2000;
 int max_random = 250;
 int emergency_threshold = 60;
 
@@ -58,8 +58,8 @@ typedef struct list_item_t{
 /*se va a encargar de generar el nr aleatorio y meterlo en el buffer para
 que luego se descargue en la lista*/
 static void generar_nr_aleatorio(unsigned long data){
-	
-	unsigned int nr = get_random_int();
+	printk(KERN_INFO "Generarssssssssssssssssssssssssssssssssssssssssssss\n");
+	/*unsigned int nr = get_random_int();
 	unsigned int nrAleat = (nr % max_random);
 	unsigned long flags;
 	int tamOcupado = 0;
@@ -67,14 +67,12 @@ static void generar_nr_aleatorio(unsigned long data){
 
 	//Protegemos
 	spin_lock_irqsave(&sp,flags);
-
 	kfifo_in(&cbuffer,&nrAleat,sizeof(int)); // Insertamos el elem generado en el buffer circular
 	printk(KERN_INFO "Se ha generado el número: %d \n", nrAleat);
-	
-	spin_unlock_irqrestore(&sp, flags);//¿si se ejecuta en otra cpu no hace falta bloquear no?
-
 	tamOcupado = kfifo_len(&cbuffer);
 	printk(KERN_INFO "TAMAÑO DEL KFIFO ES: : %i \n", tamOcupado);
+	spin_unlock_irqrestore(&sp, flags);//¿si se ejecuta en otra cpu no hace falta bloquear no?
+	
 	if(tamOcupado >= emergency_threshold){
 		//Consulta si un trabajo esta pendiente.
 		if(work_pending((struct work_struct *) &my_work)){
@@ -90,7 +88,7 @@ static void generar_nr_aleatorio(unsigned long data){
 			schedule_work_on(0,&my_work);
         }
 	}
-	mod_timer(&my_timer, jiffies + timer_period_ms);
+	mod_timer(&my_timer, jiffies + timer_period_ms);*/
 }
 
 //p4 parte A, permite insertar un elemento en la lista
@@ -150,12 +148,99 @@ return 0;
 
 //el read para cat /proc/modtimerConfig y mostrar las tres variables globales
 static ssize_t modconfig_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
-return 0;
+    char kbuf[MAX_KBUF];
+    int tam=0;
+    char val[5];
+
+    char timerPeriodMs[35];
+	char emergencyThreshold[35];
+	char maxRandom[35];
+
+	if ((*off) > 0){
+        return 0;
+    }
+
+	strcpy(timerPeriodMs,"timer_period_ms = ");
+	strcpy(emergencyThreshold,"emergency_threshold = ");
+	strcpy(maxRandom,"max_random = ");
+
+ 
+	sprintf(val, "%d", timer_period_ms);
+	strcat(timerPeriodMs,val);
+	
+	sprintf(val, "%d", emergency_threshold);
+	strcat(emergencyThreshold,val);
+	
+	sprintf(val, "%d", max_random);
+	strcat(maxRandom,val);
+
+	kbuf[0]='\0';
+
+	strcat(kbuf,timerPeriodMs);
+	strcat(kbuf,"\n");
+	strcat(kbuf,emergencyThreshold);
+	strcat(kbuf,"\n");
+	strcat(kbuf,maxRandom);
+	strcat(kbuf,"\n");
+
+	tam = strlen(kbuf);
+	
+	kbuf[tam] = '\0';
+	tam++;
+
+	printk(KERN_INFO "modtimer: DATOS: %s \n",kbuf);
+
+	if (copy_to_user(buf, kbuf, tam)){
+        return -EINVAL;
+    }
+
+    (*off)+=len;
+
+	return tam;
 }
 
 //el writte para /proc/modtimerCOnfig que permite modificar las tres variables globales
 static ssize_t modconfig_write(struct file *filp, const char __user *buf, size_t len, loff_t *off) {
-return 0;
+   
+    char kbuf[MAX_KBUF];
+
+    int nuevo_timer_period_ms;
+    int nuevo_emergency_threshold;
+    int nuevo_max_random;
+
+    if ((*off) > 0){
+    	return 0;
+    }
+
+    if (len > MAX_KBUF-1) {
+        printk(KERN_INFO "modtimer: No hay espacio disponible\n");
+        return -ENOSPC;
+    }
+    // pasamos el buf en kbuf
+    if (copy_from_user(kbuf, buf, len )){
+        return -EFAULT;
+    }
+
+    kbuf[len] = '\0';
+    *off+=len;
+
+    //Parseamos la entrada
+    if(sscanf(kbuf,"timer_period_ms %i",&nuevo_timer_period_ms) == 1) {
+        timer_period_ms = nuevo_timer_period_ms;
+        printk(KERN_INFO "modtimer: El nuevo timer_period_ms es: %i\n", timer_period_ms);
+    }
+    else if(sscanf(kbuf,"emergency_threshold %i", &nuevo_emergency_threshold) == 1) {
+        emergency_threshold = nuevo_emergency_threshold;
+        printk(KERN_INFO "modtimer: El nuevo emergency_threshold es: %i\n", emergency_threshold);
+    }
+    else if(sscanf(kbuf,"max_random %i", &nuevo_max_random) == 1) {
+        max_random = nuevo_max_random;
+        printk(KERN_INFO "modtimer: El nuevo max_random es: %i\n", max_random);
+    }
+    else {
+        return -EINVAL;
+    }
+    return len;
 }
 
 /* La función asociada a la tarea volcará los datos del buffer a la lista
@@ -241,6 +326,10 @@ int init_timer_module( void ){
 
 void exit_timer_module( void ){
 	del_timer_sync(&my_timer);
+	cleanUp_list();
+	remove_proc_entry("modconfig", NULL);
+    remove_proc_entry("modtimer", NULL);
+    kfifo_free(&cbuffer);
 }
 
 module_init(init_timer_module);
