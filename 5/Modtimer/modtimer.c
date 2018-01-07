@@ -58,7 +58,7 @@ typedef struct list_item_t{
 /*se va a encargar de generar el nr aleatorio y meterlo en el buffer para
 que luego se descargue en la lista*/
 static void generar_nr_aleatorio(unsigned long data){
-	printk(KERN_INFO "Generarssssssssssssssssssssssssssssssssssssssssssss\n");
+
 	/*unsigned int nr = get_random_int();
 	unsigned int nrAleat = (nr % max_random);
 	unsigned long flags;
@@ -82,10 +82,10 @@ static void generar_nr_aleatorio(unsigned long data){
         cpuAct = smp_processor_id();
 
         if(cpuAct % 2 == 0){ // si la cpu actual es par
-        	schedule_work_on(1,&my_work);
+        	schedule_work_on(1,&my_work);//Planificamos el trabajo en una cpu impar
         }
         else{//impar
-			schedule_work_on(0,&my_work);
+			schedule_work_on(0,&my_work);//Planificamos el trabajo en una cpu par
         }
 	}
 	mod_timer(&my_timer, jiffies + timer_period_ms);*/
@@ -126,11 +126,6 @@ void cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de l
 	spin_unlock(&sp);
 }
 
-//Pasa los elementos del buffer circular a la lista
-/*static void rellenar_lista(                 ){
-
-}*/
-
 //el open para /proc/modtimer
 static int modtimer_open(struct inode *nodo, struct file *file){
 return 0;
@@ -157,7 +152,7 @@ static ssize_t modconfig_read(struct file *filp, char __user *buf, size_t len, l
 	char maxRandom[35];
 
 	if ((*off) > 0){
-        return 0;
+    	return 0;
     }
 
 	strcpy(timerPeriodMs,"timer_period_ms = ");
