@@ -57,7 +57,6 @@ int nrElemsLista = 0;
 int cons_count = 0; //Numero de procesos que abrieron la entrada /proc para lectura 
 			//(consumidores)
 struct semaphore mtx; //Para garantizar exclusión mutua
-struct semaphore sem_prod; //Cola de espera para productor(es)
 struct semaphore sem_cons; //Cola de espera para consumidor(es)
 int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
@@ -192,7 +191,8 @@ static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, lo
 		
 	if(down_interruptible(&mtx)) return -EINTR;
 
-	while (kfifo_len(&cbuffer) < len) {
+	//Mientras este vacia la lista, sigue en el bucle
+	while (list_empty(&mylist) == 0) {
 		nr_cons_waiting++;
 		
 		up(&mtx);
