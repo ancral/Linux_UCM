@@ -54,9 +54,14 @@ typedef struct list_item_t{
 
 int nrElemsLista = 0;
 
+int cons_count = 0; //Numero de procesos que abrieron la entrada /proc para lectura 
+			//(consumidores)
 struct semaphore mtx; //Para garantizar exclusión mutua
 struct semaphore sem_prod; //Cola de espera para productor(es)
 struct semaphore sem_cons; //Cola de espera para consumidor(es)
+int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
+
+unsigned long flags;
 
 
 /*se va a encargar de generar el nr aleatorio y meterlo en el buffer para
@@ -108,14 +113,10 @@ int insertar_elem_lista(unsigned int elem){
 
 	nuevoNodo->data = elem; //Establecemos el dato
 	
-	if(down_interruptible(&mtx)){
-		return -EINTR;
-	}
 	
 	list_add_tail(&nuevoNodo->links, &mylist);
 	printk(KERN_INFO "Modlist: Dato aniadido %i a la lista\n", elem);
 	nrElemsLista++;
-	up(&mtx);
 
 	return 0;
 }
@@ -146,20 +147,86 @@ int cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la
 
 //el open para /proc/modtimer
 static int modtimer_open(struct inode *nodo, struct file *file){
+
 	add_timer(&my_timer); //Activa el timer la primera vez
 
-return 0;
+	return 0;
 }
 
 //el release para /proc/modtimer
 static int modtimer_release(struct inode *nodo, struct file *file){
+	struct list_item_t* elem = NULL;
+	struct list_head* nodoAct = NULL;
+	struct list_head* aux = NULL;
+	
+	//Liberamos el timer
 	del_timer_sync(&my_timer);
-return 0;
+
+	//Liberamos cbuffer
+	spin_lock_irqsave(&sp,flags);
+	clear_cbuffer_t(cbuffer);
+	spin_unlock_irqrestore(&sp,flags);
+	
+	//Liberamos lista
+	list_for_each_safe(nodoAct, aux, &mylist){
+		elem = list_entry(nodoAct, struct list_item_t, links);
+		list_del(pos);
+		vfree(elem);
+	}
+
+	return 0;
 }
 
 //el read para /proc/modtimer, el que permite hacer cat /proc/modtimer
 static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
-return 0;
+	char kbuf[MAX_KBUF];
+	char *dest = kbuf;
+	int ret;
+	struct list_head* nodoAct = NULL;
+	struct list_item_t* elem = NULL;
+	struct list_head* aux = NULL;
+	
+	if((*off) > 0) return 0; 
+	
+	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
+		
+	if(down_interruptible(&mtx)) return -EINTR;
+
+	while (kfifo_len(&cbuffer) < len) {
+		nr_cons_waiting++;
+		
+		up(&mtx);
+		
+		if (down_interruptible(&sem_cons)) {
+			down(&mtx);
+			nr_cons_waiting--;
+			up(&mtx);
+			return -EINTR;
+		}
+		
+		if (down_interruptible(&mtx)) return -EINTR;
+	}
+	
+	list_for_each_safe(nodoAct,aux,&mylist){
+		elem = list_entry(nodoAct, struct list_item_t, links);     
+		list_del(nodoAct);
+        printk(KERN_INFO "Modtimer: %i elemento leido",elem->data); 
+        dest+=sprintf(dest,"%i\n",elem->data);
+		vfree(elem); 
+	}
+	kbuf[len] = '\0'; 
+
+	up(&mtx);
+		
+	if((*off) > 0) ret = 0;
+	else {
+		if (copy_to_user(buf, kbuf, len)) return -EINVAL;
+		ret = (dest-kbuf);
+	}
+
+	(*off) += len; 
+
+	return ret; 
 }
 
 //el read para cat /proc/modtimerConfig y mostrar las tres variables globales
@@ -268,29 +335,35 @@ enlazada de enteros:
 */
 static void my_wq_function( struct work_struct *work ){
 
-	int kbuf[MAX_KBUF];
-	unsigned long flags;
-	int tamOcupado = kfifo_len(&cbuffer);
+	int kbuf[MAX_KBUF]; 
+	int tamOcupado;
 	int i = 0;
-
-	spin_lock_irqsave(&sp, flags);
-	//1º
 	
+	spin_lock_irqsave(&sp, flags); //El spinlock protege el buffer
+	//1º
 	//¡¡¡¡ NO COMPROBADO EL KFIFO OUT!!!
+	tamOcupado = kfifo_len(&cbuffer); //El tamaño puede cambiar
 	kfifo_out(&cbuffer,&kbuf,(nrElemsLista*sizeof(int))); // Insertamos el elem generado en el buffer circular
 
 	spin_unlock_irqrestore(&sp, flags);
+	
+	kbuf[tamOcupado] = '\0'; 
+	
+	if(down_interruptible(&mtx)) return -EINTR;
+	
 	//2º
 	for(i=0; i<tamOcupado; i++){
 		insertar_elem_lista(kbuf[i]);
 	}
 
-	//3º semaforo productor consumidor??
-	if(cons_bloqueados > 0){
+	//3º semaforo productor consumidor??--> Respuesta: solo consumidor
+	if(nr_cons_waiting > 0){
         up(&sem_cons);
-     	//restar consumidores
+     	nr_cons_waiting--;
     }
-
+	
+	up(&mtx);
+	
 	printk(KERN_INFO "modtimer: Se han copiado todos los elementos a la lista\n");
 }
 
