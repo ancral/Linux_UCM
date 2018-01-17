@@ -10,16 +10,15 @@
 #include <linux/workqueue.h>
 #include <asm/smp.h>
 #include <asm/spinlock.h>
-#include <asm-generic/errno.h>
 #include <linux/kfifo.h>
 
 #define MAX_CBUFFER_LEN		64
 #define MAX_KBUF		64
 
 //Variables globales
-int timer_period_hz = 500;
-int max_random = 250;
-int emergency_threshold = 60;
+int timer_period_ms = 250;
+int max_random = 100;
+int emergency_threshold = 10;
 
 //Las dos entradas de /prog que se piden. cfg para cambiar los params y la otra para consumir nr
 static struct proc_dir_entry *proc_entry_cfg, *proc_entry_timer;
@@ -27,11 +26,9 @@ static struct proc_dir_entry *proc_entry_cfg, *proc_entry_timer;
 //buffer circular
 static struct kfifo cbuffer;
 
-
-//OPCION 2 que se puede encolar en la cola por defecto con schedule_work(&my_work);
 /* Work descriptor */
 struct work_struct my_work;
-/* //Se supone que struct work_struct my_work sigue esta estructura
+/* struct work_struct my_work sigue esta estructura
 struct work_struct {
 	atomic_long_t data;
 	struct list_head entry;
@@ -48,15 +45,13 @@ struct list_head mylist; //Lista de nodos
 
 //Nodos de la lista
 typedef struct list_item_t{
-	int data;
+	unsigned int data;
 	struct list_head links; //links contiene prev y next
 }list_item;
 
-int nrElemsLista = 0;
-
 int cons_count = 0; //Numero de procesos que abrieron la entrada /proc para lectura 
 			//(consumidores)
-struct semaphore mtx; //Para garantizar exclusión mutua
+struct semaphore sem_list; //Para garantizar exclusión mutua
 struct semaphore sem_cons; //Cola de espera para consumidor(es)
 int nr_cons_waiting = 0; //Numero de procesos consumidores esperando
 
@@ -76,11 +71,11 @@ static void generar_nr_aleatorio(unsigned long data){
 	//Protegemos
 	spin_lock_irqsave(&sp,flags);
 
-	kfifo_in(&cbuffer,&nrAleat,sizeof(int)); // Insertamos el elem generado en el buffer circular
-	printk(KERN_INFO "Se ha generado el número: %d \n", nrAleat);
+	kfifo_in(&cbuffer,&nrAleat,sizeof(unsigned int)); // Insertamos el elem generado en el buffer circular
+	printk(KERN_INFO "Se ha generado el numero: %i \n", nrAleat);
 
-	tamOcupado = kfifo_len(&cbuffer);
-	printk(KERN_INFO "TAMAÑO DEL KFIFO ES: : %i \n", tamOcupado);
+	tamOcupado = kfifo_len(&cbuffer)/4;
+	printk(KERN_INFO "TAMANIO DEL KFIFO ES: : %i \n", tamOcupado);
 
 	spin_unlock_irqrestore(&sp, flags);//¿si se ejecuta en otra cpu no hace falta bloquear no?
 	
@@ -100,8 +95,9 @@ static void generar_nr_aleatorio(unsigned long data){
         }
 	}
 
-	mod_timer(&my_timer, jiffies + timer_period_hz);
+	mod_timer(&my_timer, jiffies + timer_period_ms);
 }
+
 
 //p4 parte A, permite insertar un elemento en la lista
 int insertar_elem_lista(unsigned int elem){
@@ -112,12 +108,59 @@ int insertar_elem_lista(unsigned int elem){
 
 	nuevoNodo->data = elem; //Establecemos el dato
 	
-	
+	if(down_interruptible(&sem_list)){
+		return -EINTR;
+	}
+
 	list_add_tail(&nuevoNodo->links, &mylist);
-	printk(KERN_INFO "Modlist: Dato aniadido %i a la lista\n", elem);
-	nrElemsLista++;
+	printk(KERN_INFO "Modlist: Dato aniadido %i a la lista\n", nuevoNodo->data);
+
+	up(&sem_list);
 
 	return 0;
+}
+
+
+/* La función asociada a la tarea volcará los datos del buffer a la lista
+enlazada de enteros:
+1º Se extraerán todos los elementos del buffer circular (vacía buffer)
+2º Se ha de reservar memoria dinámica para los nodos de la lista vía vmalloc()
+3º Si el programa de usuario está bloqueado esperando a que haya ele-mentos en la lista, la función le despertará
+*/
+static void my_wq_function( struct work_struct *work ){
+
+	unsigned int kbuf[MAX_KBUF]; 
+	int i = 0;
+	int tam = kfifo_len(&cbuffer);
+	int res = 0;
+
+	printk(KERN_INFO "Modtimer: Kfifo len vale: %i \n", tam/4);
+	
+	spin_lock_irqsave(&sp, flags); //El spinlock protege el buffer
+
+	//1º
+	res = kfifo_out(&cbuffer,kbuf,tam);
+
+	if(res != tam){
+		printk(KERN_INFO "No se ha vaciado el kfifo bien. Tamaño del cbuffer real: %i\n", res/4);
+	}
+
+	spin_unlock_irqrestore(&sp, flags);
+	
+	kbuf[tam+1] = '\0'; 
+
+	//2º
+	for(i=0; i<tam/4; i++){
+		insertar_elem_lista(kbuf[i]);
+	}
+
+	//3º
+	if(nr_cons_waiting > 0){
+        up(&sem_cons);
+     	nr_cons_waiting--;
+    }
+	
+	printk(KERN_INFO "Modtimer: Se han copiado todos los elementos a la lista\n");
 }
 
 //Se usará cuando haya que vaciar la lista despues de consumir los elems
@@ -127,7 +170,7 @@ int cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la
 	struct list_head* nodoAct = NULL;
 	struct list_head* aux = NULL;
 
-	if(down_interruptible(&mtx)){
+	if(down_interruptible(&sem_list)){
 		return -EINTR;
 	}
 
@@ -138,96 +181,120 @@ int cleanUp_list(void) { //Esta funcion tiene que eliminar todos los nodos de la
 		vfree(elem); //Liberacion de memoria donde estaba el nodo
 	}
 	printk(KERN_INFO "Modlist: Lista vaciada \n");
-	nrElemsLista = 0;
-	up(&mtx);
+	up(&sem_list);
 
 	return 0;
 }
+
 
 //el open para /proc/modtimer
 static int modtimer_open(struct inode *nodo, struct file *file){
 
+	  //Comprobamos que no hay ningun consumidor
+    if(cons_count > 0){
+        printk(KERN_INFO "Modtimer: Error, ya hay un consumidor.\n");
+        return -ENOSPC; //Ver error a lanzar
+    }
+    //decimos que somos el consumidor
+    cons_count++;
+
+    printk(KERN_INFO "Modtimer: Timer aniadido\n");
 	add_timer(&my_timer); //Activa el timer la primera vez
 
-	return 0;
-}
-
-//el release para /proc/modtimer
-static int modtimer_release(struct inode *nodo, struct file *file){
-	struct list_item_t* elem = NULL;
-	struct list_head* nodoAct = NULL;
-	struct list_head* aux = NULL;
-	
-	//Liberamos el timer
-	del_timer_sync(&my_timer);
-
-	//Liberamos cbuffer
-	spin_lock_irqsave(&sp,flags);
-	clear_cbuffer_t(cbuffer);
-	spin_unlock_irqrestore(&sp,flags);
-	
-	//Liberamos lista
-	list_for_each_safe(nodoAct, aux, &mylist){
-		elem = list_entry(nodoAct, struct list_item_t, links);
-		list_del(pos);
-		vfree(elem);
-	}
+	try_module_get(THIS_MODULE);
 
 	return 0;
 }
+
 
 //el read para /proc/modtimer, el que permite hacer cat /proc/modtimer
 static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
-	char kbuf[MAX_KBUF];
-	char *dest = kbuf;
-	int ret;
+
 	struct list_head* nodoAct = NULL;
-	struct list_item_t* elem = NULL;
 	struct list_head* aux = NULL;
-	
-	if((*off) > 0) return 0; 
-	
-	if(len > MAX_CBUFFER_LEN || len > MAX_KBUF) return -ENOSPC;
-		
-	if(down_interruptible(&mtx)) return -EINTR;
+	struct list_item_t* elem = NULL;
 
-	//Mientras este vacia la lista, sigue en el bucle
-	while (list_empty(&mylist) == 0) {
-		nr_cons_waiting++;
-		
-		up(&mtx);
-		
-		if (down_interruptible(&sem_cons)) {
-			down(&mtx);
-			nr_cons_waiting--;
-			up(&mtx);
-			return -EINTR;
+    char kbuf[MAX_KBUF];
+    char* dest = kbuf;
+
+    if((*off) > 0) return 0;
+
+    if(list_empty(&mylist)){   //No hay elementos en la lista
+        // Bloqueamos al consumidor hasta que haya elementos en la lista enlazada
+        nr_cons_waiting++;
+        printk(KERN_INFO "Modtimer: Consumidor bloqueado, esperando elementos\n");
+		if(down_interruptible(&sem_cons)){
+		  nr_cons_waiting--;
+		  return -EINTR;
 		}
-		
-		if (down_interruptible(&mtx)) return -EINTR;
-	}
-	
-	list_for_each_safe(nodoAct,aux,&mylist){
-		elem = list_entry(nodoAct, struct list_item_t, links);     
-		list_del(nodoAct);
-        printk(KERN_INFO "Modtimer: %i elemento leido",elem->data); 
-        dest+=sprintf(dest,"%i\n",elem->data);
-		vfree(elem); 
-	}
-	kbuf[len] = '\0'; 
+    }
+    // Proteccion
+    if(down_interruptible(&sem_list)){
+    	printk(KERN_INFO "Modtimer: He entrado donde no debo\n");
+        return -EINTR;
+    }
 
-	up(&mtx);
-		
-	if((*off) > 0) ret = 0;
-	else {
-		if (copy_to_user(buf, kbuf, len)) return -EINVAL;
-		ret = (dest-kbuf);
+    if(!list_empty(&mylist)){
+    	//Si la lista no esta vacia va consumiendo elementos
+    	list_for_each_safe(nodoAct, aux, &mylist){
+			elem = list_entry(nodoAct, struct list_item_t, links);
+			dest += sprintf(dest, "%u\n", elem->data);
+			printk(KERN_INFO "Se ha leido el elemento: %u \n", elem->data);
+
+			//Eliminamos los elementos de la lista para que cuando acabe quede vacia y se puedan seguir metiendo
+			list_del(&elem->links);
+			vfree(elem); //Liberacion de memoria donde estaba el nodo
+   		}
+   		kbuf[len] = '\0';	
+		if (copy_to_user(buf, kbuf, dest-kbuf)){
+			return -EINVAL;
+		}
 	}
 
-	(*off) += len; 
+    up(&sem_list);
 
-	return ret; 
+    return dest-kbuf;
 }
+
+/*
+1 Desactivar el temporizador con del_timer_sync()
+2 Esperar a que termine todo el trabajo planificado hasta el momento
+en la workqueue por defecto
+3 Vaciar el buffer circular
+4 Vaciar la lista enlazada (liberar memoria)
+5 Decrementar contador de referencias del módulo
+
+*/
+static int modtimer_release(struct inode *nodo, struct file *file){
+	
+	//1º
+	del_timer_sync(&my_timer);
+	printk(KERN_INFO "Modtimer: Timer borrado\n");
+	// 2º
+    if(work_pending((struct work_struct *) &my_work)){
+        flush_scheduled_work();
+    	printk(KERN_INFO "Modtimer: Trabajos acabados\n");
+	}
+	//3º
+	spin_lock_irqsave(&sp,flags);
+	
+	kfifo_free(&cbuffer);
+	printk(KERN_INFO "Modtimer: Kfifo vaciado\n");
+	spin_unlock_irqrestore(&sp,flags);
+	
+	//4º
+	cleanUp_list();
+
+	module_put(THIS_MODULE);
+
+	return 0;
+}
+
+static const struct file_operations proc_entry_fops_timer= {
+    .read = modtimer_read,
+    .open = modtimer_open,
+    .release = modtimer_release,
+};
 
 //el read para cat /proc/modtimerConfig y mostrar las tres variables globales
 static ssize_t modconfig_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
@@ -248,7 +315,7 @@ static ssize_t modconfig_read(struct file *filp, char __user *buf, size_t len, l
 	strcpy(maxRandom,"max_random = ");
 
  
-	sprintf(val, "%d", (1/timer_period_hz)*1000);
+	sprintf(val, "%d", timer_period_ms);
 	strcat(timerPeriodMs,val);
 	
 	sprintf(val, "%d", emergency_threshold);
@@ -271,7 +338,7 @@ static ssize_t modconfig_read(struct file *filp, char __user *buf, size_t len, l
 	kbuf[tam] = '\0';
 	tam++;
 
-	printk(KERN_INFO "modtimer: DATOS: %s \n",kbuf);
+	printk(KERN_INFO "Modconfig: DATOS: %s \n",kbuf);
 
 	if (copy_to_user(buf, kbuf, tam)){
         return -EINVAL;
@@ -296,7 +363,7 @@ static ssize_t modconfig_write(struct file *filp, const char __user *buf, size_t
     }
 
     if (len > MAX_KBUF-1) {
-        printk(KERN_INFO "modtimer: No hay espacio disponible\n");
+        printk(KERN_INFO "Modconfig: No hay espacio disponible\n");
         return -ENOSPC;
     }
     // pasamos el buf en kbuf
@@ -309,16 +376,16 @@ static ssize_t modconfig_write(struct file *filp, const char __user *buf, size_t
 
     //Parseamos la entrada
     if(sscanf(kbuf,"timer_period_ms %i",&nuevo_timer_period_ms) == 1) {
-        timer_period_hz = (1/nuevo_timer_period_ms)*1000;
-        printk(KERN_INFO "modtimer: El nuevo timer_period_ms es: %i\n", nuevo_timer_period_ms);
+        timer_period_ms = nuevo_timer_period_ms;
+        printk(KERN_INFO "Modconfig: El nuevo timer_period_ms es: %i\n", nuevo_timer_period_ms);
     }
     else if(sscanf(kbuf,"emergency_threshold %i", &nuevo_emergency_threshold) == 1) {
         emergency_threshold = nuevo_emergency_threshold;
-        printk(KERN_INFO "modtimer: El nuevo emergency_threshold es: %i\n", emergency_threshold);
+        printk(KERN_INFO "Modconfig: El nuevo emergency_threshold es: %i\n", emergency_threshold);
     }
     else if(sscanf(kbuf,"max_random %i", &nuevo_max_random) == 1) {
         max_random = nuevo_max_random;
-        printk(KERN_INFO "modtimer: El nuevo max_random es: %i\n", max_random);
+        printk(KERN_INFO "Modconfig: El nuevo max_random es: %i\n", max_random);
     }
     else {
         return -EINVAL;
@@ -326,56 +393,9 @@ static ssize_t modconfig_write(struct file *filp, const char __user *buf, size_t
     return len;
 }
 
-/* La función asociada a la tarea volcará los datos del buffer a la lista
-enlazada de enteros:
-
-1º Se extraerán todos los elementos del buffer circular (vacía buffer)
-2º Se ha de reservar memoria dinámica para los nodos de la lista vía vmalloc()
-3º Si el programa de usuario está bloqueado esperando a que haya ele-mentos en la lista, la función le despertará
-*/
-static void my_wq_function( struct work_struct *work ){
-
-	int kbuf[MAX_KBUF]; 
-	int tamOcupado;
-	int i = 0;
-	
-	spin_lock_irqsave(&sp, flags); //El spinlock protege el buffer
-	//1º
-	//¡¡¡¡ NO COMPROBADO EL KFIFO OUT!!!
-	tamOcupado = kfifo_len(&cbuffer); //El tamaño puede cambiar
-	kfifo_out(&cbuffer,&kbuf,(nrElemsLista*sizeof(int))); // Insertamos el elem generado en el buffer circular
-
-	spin_unlock_irqrestore(&sp, flags);
-	
-	kbuf[tamOcupado] = '\0'; 
-	
-	if(down_interruptible(&mtx)) return -EINTR;
-	
-	//2º
-	for(i=0; i<tamOcupado; i++){
-		insertar_elem_lista(kbuf[i]);
-	}
-
-	//3º semaforo productor consumidor??--> Respuesta: solo consumidor
-	if(nr_cons_waiting > 0){
-        up(&sem_cons);
-     	nr_cons_waiting--;
-    }
-	
-	up(&mtx);
-	
-	printk(KERN_INFO "modtimer: Se han copiado todos los elementos a la lista\n");
-}
-
 static struct file_operations proc_entry_fops_cfg = {
     .read = modconfig_read,
     .write = modconfig_write,
-};
-
-static const struct file_operations proc_entry_fops_timer= {
-    .read = modtimer_read,
-    .open = modtimer_open,
-    .release = modtimer_release,
 };
 
 
@@ -392,31 +412,40 @@ int init_timer_module( void ){
 
 	my_timer.data=0;
     my_timer.function=generar_nr_aleatorio;
-    my_timer.expires=jiffies + timer_period_hz;
+    my_timer.expires=jiffies + timer_period_ms;
 
+    sema_init(&sem_list, 1);
+    sema_init(&sem_cons, 0);
 
 	if(kfifo_alloc(&cbuffer,(MAX_CBUFFER_LEN*sizeof(int)),GFP_KERNEL)) { // creamos memoria para el kfifo
 		return -ENOMEM;
 	}
 
-	proc_entry_timer = proc_create_data("modtimer", 0666, NULL, &proc_entry_fops_timer, NULL); // Crea la entrada para el modtimer
 	proc_entry_cfg = proc_create_data("modconfig", 0666, NULL, &proc_entry_fops_cfg, NULL); // Crea la entrada para el modtimer
-
-	if(proc_entry_timer == NULL || proc_entry_cfg == NULL) { // si hay error vaciamos el kfifo
-		kfifo_free(&cbuffer);
-		printk(KERN_INFO "Modtimer: Error al crear la entrada modtimer o modconfig\n");
+	
+    if (proc_entry_cfg == NULL) {
+        printk(KERN_INFO "Modtimer: Error al crear la entrada /proc/modconfig\n");
+        kfifo_free(&cbuffer);
+        return -ENOMEM;
+    }
+    else {
+		proc_entry_timer = proc_create_data("modtimer", 0666, NULL, &proc_entry_fops_timer, NULL); // Crea la entrada para el modtimer
+		if(proc_entry_timer == NULL) {
+			printk(KERN_INFO "Modtimer: Error al crear la entrada /proc/modtimer\n");
+			kfifo_free(&cbuffer);
+			remove_proc_entry("modconfig", NULL);
 		return -ENOMEM;
-	}
+		}
+		printk(KERN_INFO "Modtimer: Las dos entradas se han creado correctamente\n");
+    }
 
 	printk(KERN_INFO "Modtimer: Modulo cargado.\n");
-
 
 	return ret;
 }
 
 void exit_timer_module( void ){
 	
-	cleanUp_list();
 	remove_proc_entry("modconfig", NULL);
     remove_proc_entry("modtimer", NULL);
     kfifo_free(&cbuffer);
