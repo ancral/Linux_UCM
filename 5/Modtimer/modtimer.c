@@ -8,9 +8,9 @@
 #include <linux/timer.h>
 #include <linux/random.h>
 #include <linux/workqueue.h>
-#include <asm/smp.h>
 #include <asm/spinlock.h>
 #include <linux/kfifo.h>
+#include <linux/jiffies.h>
 
 #define MAX_CBUFFER_LEN		64
 #define MAX_KBUF		64
@@ -81,7 +81,7 @@ static void generar_nr_aleatorio(unsigned long data){
 	
 	if(tamOcupado >= emergency_threshold){
 		//Consulta si un trabajo esta pendiente.
-		if(work_pending((struct work_struct *) &my_work)){
+		if(work_pending(&my_work)){
 			//Si el trabajo esta pendiente espera la finalización de todos los trabajos en workqueue por defecto
             flush_scheduled_work();
         }
@@ -95,7 +95,7 @@ static void generar_nr_aleatorio(unsigned long data){
         }
 	}
 
-	mod_timer(&my_timer, jiffies + timer_period_ms);
+	mod_timer(&my_timer, jiffies + msecs_to_jiffies(timer_period_ms));
 }
 
 
@@ -206,7 +206,6 @@ static int modtimer_open(struct inode *nodo, struct file *file){
 	return 0;
 }
 
-
 //el read para /proc/modtimer, el que permite hacer cat /proc/modtimer
 static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, loff_t *off) {
 
@@ -217,7 +216,7 @@ static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, lo
     char kbuf[MAX_KBUF];
     char* dest = kbuf;
 
-    if((*off) > 0) return 0;
+    //if((*off) > 0) return 0;
 
     if(list_empty(&mylist)){   //No hay elementos en la lista
         // Bloqueamos al consumidor hasta que haya elementos en la lista enlazada
@@ -249,10 +248,11 @@ static ssize_t modtimer_read(struct file *filp, char __user *buf, size_t len, lo
 		if (copy_to_user(buf, kbuf, dest-kbuf)){
 			return -EINVAL;
 		}
+		(*off) += len;
 	}
-
+	
     up(&sem_list);
-
+    
     return dest-kbuf;
 }
 
@@ -271,7 +271,7 @@ static int modtimer_release(struct inode *nodo, struct file *file){
 	del_timer_sync(&my_timer);
 	printk(KERN_INFO "Modtimer: Timer borrado\n");
 	// 2º
-    if(work_pending((struct work_struct *) &my_work)){
+    if(work_pending(&my_work)){
         flush_scheduled_work();
     	printk(KERN_INFO "Modtimer: Trabajos acabados\n");
 	}
@@ -412,7 +412,7 @@ int init_timer_module( void ){
 
 	my_timer.data=0;
     my_timer.function=generar_nr_aleatorio;
-    my_timer.expires=jiffies + timer_period_ms;
+    my_timer.expires=jiffies + msecs_to_jiffies(timer_period_ms);
 
     sema_init(&sem_list, 1);
     sema_init(&sem_cons, 0);
